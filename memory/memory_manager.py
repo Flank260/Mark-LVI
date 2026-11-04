@@ -94,25 +94,17 @@ def set_trim_notifier(fn) -> None:
 
 
 def _trim_to_limit(memory: dict) -> dict:
-    if len(json.dumps(memory, ensure_ascii=False)) <= MEMORY_MAX_CHARS:
-        return memory
-    entries = _all_entries(memory)
-    entries.sort(key=lambda t: t[2].get("updated", "0000-00-00"))
-    dropped = []
-    for cat, key, _ in entries:
-        if len(json.dumps(memory, ensure_ascii=False)) <= MEMORY_MAX_CHARS:
-            break
-        del memory[cat][key]
-        dropped.append(f"{cat}/{key}")
-        print(f"[Memory] 🗑️  Trimmed {cat}/{key}")
-    if dropped and _trim_notifier:
-        try:
-            _trim_notifier(
-                f"SYS: Memory full — forgot {len(dropped)} oldest entries "
-                f"({', '.join(dropped[:3])}{'…' if len(dropped) > 3 else ''})"
-            )
-        except Exception:
-            pass
+    """Refuse oversized writes rather than silently deleting older memories.
+
+    Preserve the existing function name for callers. Raising before any disk
+    write keeps the previous stored facts intact.
+    """
+    size = len(json.dumps(memory, ensure_ascii=False))
+    if size > MEMORY_MAX_CHARS:
+        raise ValueError(
+            f"Memory write refused: {size} characters exceeds the "
+            f"{MEMORY_MAX_CHARS}-character safety guard; no facts were deleted."
+        )
     return memory
 
 def save_memory(memory: dict) -> None:
@@ -128,10 +120,8 @@ def save_memory(memory: dict) -> None:
 
 
 def _truncate_value(val: str) -> str:
-    if isinstance(val, str) and len(val) > MAX_VALUE_LENGTH:
-        return val[:MAX_VALUE_LENGTH].rstrip() + "…"
+    """Compatibility shim: store complete values without silent truncation."""
     return val
-
 
 def _recursive_update(target: dict, updates: dict) -> bool:
     changed = False
